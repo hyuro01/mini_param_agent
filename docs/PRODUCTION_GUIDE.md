@@ -24,6 +24,12 @@ mini_param_agent provides a local agent loop and single-script ML experiments. I
 | **Logging**            | ✅ Per-run log files and experiment artifacts                                                                          |
 | **ML experiment capability**            | ✅ Read parameter range, `run_ml_experiment` runs and trains the py / notebook file, and save best parameters in `.mini_param_agent/experiments/`, or can choose to write directly to the source file                                                                          |
 
+### Experiment contract and evidence
+
+`tools/ml_experiment_contract.py` defines versioned `ExperimentContract` and `EvidenceBundle` models. The ML tool statically inspects Python/Notebook code for syntax, literal parameter references, and metric-output clues before training. `static_check_mode="strict"` rejects unreferenced searched parameters in parseable Python; `"warn"` allows dynamic lookup while recording warnings. This does not prove that a parameter changes the model or that a metric is valid. Each trial is checked for a finite numeric target metric at runtime.
+
+An experiment directory contains `contract.json` (source SHA-256, command, search space, seed and static findings), per-trial metrics and logs, `results.csv`, `failure_facts.json`, `evidence.json`, and `report.md`. Successful experiments also contain the existing `best_params.json`. The evidence bundle records the baseline, all trials, program-selected best result, Python/platform and selected dependency versions, artifact paths and failure facts. Each fact includes the trial, parameters, error category, return code, log paths and a suggested next action. When no trial has a valid metric, the tool returns the evidence paths as an error; it does not invent a best result. Failures are fed back to the Agent as tool results, but script repair and reruns still require an explicit decision. This is a single-script local experiment contract, not a general semantic model analyzer.
+
 ### 1.1 Project Structure
 
 ```text
@@ -36,7 +42,7 @@ mini_param_agent/
 ├── config/                 # Safe templates, system prompt and MCP example
 ├── llm/                    # Anthropic/OpenAI-compatible provider clients
 ├── schema/                 # Pydantic message, tool-call and usage models
-├── tools/                  # File, shell, notes, Skills, MCP, ML and recall tools
+├── tools/                  # File, shell, notes, Skills, MCP, ML contract and recall tools
 ├── skills/                 # Bundled skill instructions and notices
 └── logger.py / retry.py    # Run logging and configurable retry policy
 tests/                      # Unit, protocol, tool and context regression tests

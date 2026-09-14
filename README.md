@@ -10,7 +10,7 @@ mini_param_agent is a local CLI agent that can run reproducible hyperparameter e
 - Configurable recent-history retention, bounded summaries, optional `recall_context` keyword search, and resumable snapshots with a previous-generation backup. Shared POSIX filesystem mounts are supported; no distributed storage service is deployed. See [context configuration](docs/PRODUCTION_GUIDE.md#21-advanced-context-management).
 - Reads, writes, and edits workspace files; runs shell commands; records and recalls session notes.
 - Loads bundled skills and optional MCP tools, and exposes an ACP server for compatible editors.
-- Runs a baseline plus Optuna trials for a single `.py` or convertible `.ipynb` training program. Trials receive parameters through `ML_EXPERIMENT_PARAMS` and report JSON/CSV metrics or `ML_METRICS` output. Results include trial logs, `results.csv`, and `best_params.json`. Source write-back is optional and explicit.
+- Runs a baseline plus Optuna trials for a single `.py` or convertible `.ipynb` training program. Static preflight checks parameter references and metric-output clues before execution. Trials receive `ML_EXPERIMENT_PARAMS` and report JSON/CSV metrics or `ML_METRICS` output. Each experiment saves a versioned contract, trial logs, `results.csv`, `best_params.json`, `evidence.json`, structured failure facts, and a Markdown report. Source write-back is optional and explicit.
 - Uses either the Anthropic or OpenAI client selected in configuration, including compatible local model endpoints when correctly configured.
 
 ## Available tools
@@ -22,7 +22,7 @@ The CLI registers these tools (individual groups can be disabled in `config.yaml
 - `record_note`, `recall_notes`: persist and retrieve session notes in the workspace.
 - `recall_context`: enabled with `context.enable_recall: true`; keyword search over this session's compacted history, separate from manually recorded notes.
 - `get_skill`: load the full instructions for one of the bundled skills on demand; skill metadata is injected into the system prompt.
-- `run_ml_experiment`: run a baseline and Optuna trials for a `.py`/`.ipynb` training program, collect metrics, and optionally write back the best parameters.
+- `run_ml_experiment`: validate a `.py`/`.ipynb` training program, run a baseline and Optuna trials, verify finite metrics, save a reproducible evidence bundle and failure facts, and optionally write back the best parameters.
 - Configured MCP tools: external tools loaded from an `mcp.json` file when MCP is enabled.
 
 The exact tool schemas are exposed to the model at runtime. File tools check workspace paths, but shell commands and training programs are not sandboxed: execute trusted code only. Context storage can explicitly target a shared directory outside the workspace; restrict its access permissions.
@@ -66,18 +66,21 @@ Set `api_key`, `api_base`, `model`, and `provider` (`anthropic` or `openai`) in 
 
 ## Run an ML experiment
 
-The training script must read `ML_EXPERIMENT_PARAMS` and write a metric to `ML_EXPERIMENT_METRICS_PATH` (or print a final `ML_METRICS: {...}` line). See [the RBF SVC example](examples/ml/tune_rbf_svc_moons.py) and the [production and ML guide](docs/PRODUCTION_GUIDE.md).
+The training script must read `ML_EXPERIMENT_PARAMS` and write a metric to `ML_EXPERIMENT_METRICS_PATH` (or print a final `ML_METRICS: {...}` line). Before execution, strict static preflight checks Python syntax, literal parameter references (including `ML_PARAM_*` and command placeholders), and metric-output clues. It cannot prove that a parameter actually affects the model; the training run remains the authoritative check. Dynamic parameter lookup can use `static_check_mode: "warn"` to retain warnings without blocking the run. See [the RBF SVC example](examples/ml/tune_rbf_svc_moons.py) and the [production and ML guide](docs/PRODUCTION_GUIDE.md).
 
 ```text
 Call run_ml_experiment on examples/ml/tune_rbf_svc_moons.py.
 Optimize val_accuracy (maximize). Search C and gamma as log-scale floats
-from 0.01 to 100 and 0.01 to 10. Use baseline C=1.0, gamma=1.0,
-20 trials, seed 42, and a 60-second per-trial timeout.
-Report the baseline, best score, best parameters, report path, and CSV path.
+from 0.01 to 100 and 0.01 to 10. Use baseline C=0.05, gamma=0.05,
+5 trials, seed 42, and a 60-second per-trial timeout.
+Report the baseline, best score, best parameters, contract.json, evidence.json,
+failure_facts.json, report.md, and results.csv paths. Mention any failed trials.
 Do not write back to the source file.
 ```
 
 To write the best parameter dictionary to a marked Python source file or a JSON config, explicitly supply `write_back_path`. The tool does not rewrite arbitrary model code or the original notebook. Experiments execute the supplied training program, so use files you trust.
+
+Every run creates `contract.json` before training with the source SHA-256, metric, search space, baseline, seed, timeout, command, and preflight findings. After the run, `evidence.json` links the baseline, trials, verified best score, Python/platform and selected dependency versions, artifacts, and structured failure facts. `failure_facts.json` records failure type, affected parameters, return code, log paths, and a suggested next action. `report.md` summarizes the program-computed result. If every trial fails, the tool returns the evidence and failure-file paths even without a `best_params.json`. These are experiment records, not a claim that the LLM automatically fixes the script. Read the failure facts and explicitly request a corrected rerun.
 
 ## Other usage
 

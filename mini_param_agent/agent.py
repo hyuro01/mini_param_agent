@@ -122,6 +122,9 @@ class Agent:
             data = json.loads(result_content)
             best_params = json.dumps(data["best_params"], ensure_ascii=False)
             write_back = data.get("write_back_path")
+            failed = data.get("failures") or []
+            failure_overview = "; ".join(f"trial {item.get('trial')}: {item.get('error_type')} → {item.get('suggested_action')}"
+                                         for item in failed)
             return (
                 "机器学习调参已完成。\n"
                 f"- 最佳 trial：{data['best_trial']}\n"
@@ -131,6 +134,10 @@ class Agent:
                 f"- 最佳参数：{best_params}\n"
                 f"- 实验报告：{data['report']}\n"
                 f"- 试验汇总：{data['results_csv']}"
+                + (f"\n- 实验契约：{data['contract']}" if data.get("contract") else "")
+                + (f"\n- 证据包：{data['evidence']}" if data.get("evidence") else "")
+                + (f"\n- 失败事实：{data['failure_facts']}（失败 trial：{data.get('failed_trials', 0)}）" if data.get("failure_facts") else "")
+                + (f"\n- 失败概览：{failure_overview}" if failure_overview else "")
                 + (f"\n- 已写回：{write_back}" if write_back else "")
             )
         except (json.JSONDecodeError, KeyError, TypeError):

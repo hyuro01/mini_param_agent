@@ -12,17 +12,20 @@ Python training script.
 import asyncio
 import csv
 import json
+import math
 import os
 import pprint
 import re
 import shlex
 import shutil
 import sys
+from time import perf_counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .base import Tool, ToolResult
+from .ml_experiment_contract import EvidenceBundle, ExperimentContract, failure_fact, finite_metric, inspect_training_script, source_digest
 
 
 class MLExperimentTool(Tool):
@@ -51,7 +54,9 @@ class MLExperimentTool(Tool):
             "line 'ML_METRICS: {\"metric\": value}'. Use parameter_space entries such as "
             "{'lr': {'type':'float','low':1e-4,'high':1e-2,'log':true}} and a validation metric. "
             "All logs, trial parameters, CSV/JSON results, and the best-parameter report are saved under "
-            ".mini_param_agent/experiments. Source files are never edited unless write_back_path is explicitly set."
+            ".mini_param_agent/experiments, including contract.json and evidence.json. Static checks flag "
+            "unreferenced search parameters; failed trials produce structured facts. Source files are never "
+            "edited unless write_back_path is explicitly set."
         )
 
     @property
@@ -70,6 +75,7 @@ class MLExperimentTool(Tool):
                 "timeout": {"type": "integer", "description": "Per-trial timeout in seconds, 1-3600 (default 600).", "default": 600},
                 "seed": {"type": "integer", "description": "Seed supplied to Optuna and ML_EXPERIMENT_SEED (default 42).", "default": 42},
                 "write_back_path": {"type": "string", "description": "Optional .json config to merge best parameters into, or .py file containing ML_EXPERIMENT_PARAMS marker comments. Never defaults to the source file."},
+                "static_check_mode": {"type": "string", "enum": ["strict", "warn"], "default": "strict", "description": "Strict rejects unreferenced searched parameters; warn permits dynamic parameter lookup and records warnings."},
                 "file": {"type": "string", "description": "Compatibility alias for script_path."},
                 "metric": {"type": "string", "description": "Compatibility alias for metric_name."},
                 "direction": {"type": "string", "enum": ["maximize", "minimize"], "description": "Compatibility alias for metric_mode."},
@@ -102,8 +108,27 @@ class MLExperimentTool(Tool):
             if kind == "categorical":
                 if not isinstance(spec.get("choices"), list) or not spec["choices"]:
                     raise ValueError(f"Categorical parameter '{name}' needs a non-empty choices list")
+                try:
+                    json.dumps(spec["choices"])
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"Categorical parameter '{name}' choices must be JSON-serializable") from exc
             elif "low" not in spec or "high" not in spec:
                 raise ValueError(f"Parameter '{name}' needs low and high values")
+            else:
+                low, high = spec["low"], spec["high"]
+                if kind == "int":
+                    if any(type(value) is not int for value in (low, high)):
+                        raise ValueError(f"Integer parameter '{name}' needs integer low/high")
+                    step = spec.get("step", 1)
+                    if type(step) is not int or step < 1:
+                        raise ValueError(f"Integer parameter '{name}' needs a positive integer step")
+                    if spec.get("log") and step != 1:
+                        raise ValueError(f"Integer parameter '{name}' cannot combine log search with step != 1")
+                elif any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+                         for value in (low, high)):
+                    raise ValueError(f"Float parameter '{name}' needs finite numeric low/high")
+                if low > high or (spec.get("log") and low <= 0):
+                    raise ValueError(f"Parameter '{name}' needs low <= high and positive bounds for log search")
 
     @staticmethod
     def _normalize_parameter_space(parameter_space: dict[str, Any] | str | None) -> dict[str, Any]:
@@ -238,6 +263,8 @@ class MLExperimentTool(Tool):
             environment[f"ML_PARAM_{key.upper()}"] = str(value)
 
         started_at = datetime.now(timezone.utc).isoformat()
+        started_clock = perf_counter()
+        log_paths = {"stdout_log": str(trial_dir / "stdout.log"), "stderr_log": str(trial_dir / "stderr.log")}
         try:
             process = await asyncio.create_subprocess_exec(
                 *command,
@@ -251,15 +278,18 @@ class MLExperimentTool(Tool):
             except asyncio.TimeoutError:
                 process.kill()
                 stdout_bytes, stderr_bytes = await process.communicate()
-                return {"trial": trial_id, "params": params, "status": "timeout", "error": f"Timed out after {timeout}s", "started_at": started_at}
+                (trial_dir / "stdout.log").write_bytes(stdout_bytes)
+                (trial_dir / "stderr.log").write_bytes(stderr_bytes)
+                return {"trial": trial_id, "params": params, "status": "timeout", "error": f"Timed out after {timeout}s", "started_at": started_at, "duration_seconds": round(perf_counter() - started_clock, 3), "command": command, **log_paths}
         except OSError as exc:
-            return {"trial": trial_id, "params": params, "status": "failed", "error": str(exc), "started_at": started_at}
+            (trial_dir / "stderr.log").write_text(str(exc), encoding="utf-8")
+            return {"trial": trial_id, "params": params, "status": "failed", "error": str(exc), "started_at": started_at, "duration_seconds": round(perf_counter() - started_clock, 3), "command": command, **log_paths}
 
         stdout = stdout_bytes.decode("utf-8", errors="replace")
         stderr = stderr_bytes.decode("utf-8", errors="replace")
         (trial_dir / "stdout.log").write_text(stdout, encoding="utf-8")
         (trial_dir / "stderr.log").write_text(stderr, encoding="utf-8")
-        record: dict[str, Any] = {"trial": trial_id, "params": params, "started_at": started_at, "command": command}
+        record: dict[str, Any] = {"trial": trial_id, "params": params, "started_at": started_at, "duration_seconds": round(perf_counter() - started_clock, 3), "command": command, **log_paths}
         if process.returncode != 0:
             record.update({"status": "failed", "return_code": process.returncode, "error": stderr[-2000:] or "Training command failed"})
             return record
@@ -274,7 +304,7 @@ class MLExperimentTool(Tool):
     def _metric_value(record: dict[str, Any], metric_name: str) -> float:
         metrics = record.get("metrics", {})
         try:
-            return float(metrics[metric_name])
+            return finite_metric(metrics[metric_name], metric_name, record.get("trial", -1))
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(f"Trial {record.get('trial')} did not report numeric metric '{metric_name}'") from exc
 
@@ -317,8 +347,12 @@ class MLExperimentTool(Tool):
         timeout: int = 600,
         seed: int = 42,
         write_back_path: str | None = None,
+        static_check_mode: str = "strict",
         **legacy_kwargs: Any,
     ) -> ToolResult:
+        experiment_dir: Path | None = None
+        contract: ExperimentContract | None = None
+        records: list[dict[str, Any]] = []
         try:
             # Local models frequently generate generic names despite the JSON
             # schema. Keep these aliases at the execution boundary rather than
@@ -334,6 +368,8 @@ class MLExperimentTool(Tool):
                 raise ValueError("script_path (or file) and metric_name (or metric) are required")
             if metric_mode not in {"maximize", "minimize"} or metrics_format not in {"auto", "json", "csv"}:
                 raise ValueError("metric_mode or metrics_format is invalid")
+            if static_check_mode not in {"strict", "warn"}:
+                raise ValueError("static_check_mode must be strict or warn")
             if not 0 <= n_trials <= 1_000 or not 1 <= timeout <= 3_600:
                 raise ValueError("n_trials must be 0-1000 and timeout must be 1-3600 seconds")
             parameter_space = self._normalize_parameter_space(parameter_space)
@@ -357,14 +393,26 @@ class MLExperimentTool(Tool):
             self._require_workspace_path(source)
             if not source.is_file():
                 raise FileNotFoundError(f"Training file not found: {script_path}")
+            if source.suffix not in {".py", ".ipynb"}:
+                raise ValueError("Training file must be .py or .ipynb")
+
+            command_template = train_command or "{python} {script}"
+            inspection = inspect_training_script(source, parameter_space, metric_name, command_template, n_trials, strict=static_check_mode == "strict")
+            if inspection["errors"]:
+                raise ValueError("Static preflight failed: " + "; ".join(inspection["errors"]))
+            contract = ExperimentContract(
+                source=str(source), source_sha256=source_digest(source), metric_name=metric_name,
+                metric_mode=metric_mode, parameter_space=parameter_space, baseline_params=reference_params,
+                n_trials=n_trials, seed=seed, timeout_seconds=timeout, metrics_format=metrics_format,
+                train_command=command_template, static_check=inspection,
+            )
 
             run_name = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") + "_" + source.stem
             experiment_dir = self.workspace_dir / ".mini_param_agent" / "experiments" / run_name
             experiment_dir.mkdir(parents=True, exist_ok=False)
+            contract_path = experiment_dir / "contract.json"
+            contract_path.write_text(contract.model_dump_json(indent=2) + "\n", encoding="utf-8")
             script = self._prepare_script(source, experiment_dir)
-            command_template = train_command or "{python} {script}"
-            records: list[dict[str, Any]] = []
-
             baseline = await self._run_trial(script, experiment_dir, 0, reference_params, command_template, metrics_format, timeout, seed)
             records.append(baseline)
 
@@ -407,25 +455,18 @@ class MLExperimentTool(Tool):
                     valid.append((self._metric_value(item, metric_name), item))
                 except ValueError as exc:
                     item.update({"status": "failed", "error": str(exc)})
-            if not valid:
-                raise RuntimeError(f"No completed trial reported numeric metric '{metric_name}'. See {experiment_dir}")
-            best_score, best = (max if metric_mode == "maximize" else min)(valid, key=lambda item: item[0])
+            best_score, best = ((max if metric_mode == "maximize" else min)(valid, key=lambda item: item[0])
+                                if valid else (None, None))
             baseline_score: float | None = None
-            try:
+            if records[0]["status"] == "completed":
                 baseline_score = self._metric_value(records[0], metric_name)
-            except ValueError:
-                pass
             improvement = None
-            if baseline_score is not None:
+            if baseline_score is not None and best_score is not None:
                 improvement = best_score - baseline_score if metric_mode == "maximize" else baseline_score - best_score
-            report = {
-                "source": str(source), "executable_script": str(script), "metric_name": metric_name,
-                "metric_mode": metric_mode, "best_trial": best["trial"], "best_score": best_score,
-                "baseline_score": baseline_score, "improvement_over_baseline": improvement,
-                "best_params": best["params"], "best_metrics": best["metrics"], "records": records,
-            }
+            facts = [fact for item in records if (fact := failure_fact(item, metric_name)) is not None]
             fieldnames = ["trial", "status", "params", "metrics", "error", "return_code"]
-            with (experiment_dir / "results.csv").open("w", newline="", encoding="utf-8") as handle:
+            results_path = experiment_dir / "results.csv"
+            with results_path.open("w", newline="", encoding="utf-8") as handle:
                 writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
                 writer.writeheader()
                 for record in records:
@@ -433,16 +474,89 @@ class MLExperimentTool(Tool):
                     row["params"] = json.dumps(row.get("params", {}), ensure_ascii=False)
                     row["metrics"] = json.dumps(row.get("metrics", {}), ensure_ascii=False)
                     writer.writerow(row)
-            if write_back_path:
-                self._write_back(self._resolve_path(write_back_path), best["params"])
-                report["write_back_path"] = str(self._resolve_path(write_back_path))
-            (experiment_dir / "best_params.json").write_text(json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
+            facts_path = experiment_dir / "failure_facts.json"
+            facts_path.write_text(json.dumps(facts, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            report_path = experiment_dir / "best_params.json"
+            report_md_path = experiment_dir / "report.md"
+            evidence_path = experiment_dir / "evidence.json"
+            artifacts = {"contract": str(contract_path), "results_csv": str(results_path),
+                         "failure_facts": str(facts_path), "report_md": str(report_md_path)}
+            if best is not None:
+                artifacts["best_params"] = str(report_path)
+            write_back_error = None
+            if write_back_path and best is not None:
+                try:
+                    self._write_back(self._resolve_path(write_back_path), best["params"])
+                    artifacts["write_back_path"] = str(self._resolve_path(write_back_path))
+                except (ValueError, OSError, json.JSONDecodeError) as exc:
+                    write_back_error = str(exc)
+                    facts.append({"trial": None, "params": best["params"], "error_type": "write_back",
+                                  "message": write_back_error, "return_code": None, "stdout_log": None,
+                                  "stderr_log": None, "suggested_action": "Check write_back_path or omit it", "recoverable": True})
+                    facts_path.write_text(json.dumps(facts, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            if best is not None:
+                report = {
+                    "source": str(source), "executable_script": str(script), "metric_name": metric_name,
+                    "metric_mode": metric_mode, "best_trial": best["trial"], "best_score": best_score,
+                    "baseline_score": baseline_score, "improvement_over_baseline": improvement,
+                    "best_params": best["params"], "best_metrics": best["metrics"], "records": records,
+                }
+                if "write_back_path" in artifacts:
+                    report["write_back_path"] = artifacts["write_back_path"]
+                report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
+            evidence = EvidenceBundle(
+                contract_path=str(contract_path), source_sha256=contract.source_sha256,
+                baseline=records[0], trials=records[1:], best_trial=best["trial"] if best else None,
+                best_score=best_score, best_params=best["params"] if best else None,
+                baseline_score=baseline_score, improvement_over_baseline=improvement,
+                failure_facts=facts, artifacts=artifacts,
+            )
+            evidence_path.write_text(evidence.model_dump_json(indent=2) + "\n", encoding="utf-8")
+            status_text = (f"Best trial {best['trial']}: {metric_name}={best_score}; params={json.dumps(best['params'], ensure_ascii=False)}"
+                           if best else f"No trial reported finite numeric {metric_name}")
+            report_md_path.write_text(
+                f"# Experiment report\n\nSource: `{source}`\n\nMetric: `{metric_name}` ({metric_mode})\n\n"
+                f"Baseline: {baseline_score}\n\n{status_text}\n\nImprovement over baseline: {improvement}\n\n"
+                f"Trials: {len(records) - 1}; failures: {len(facts)}\n\n"
+                f"Evidence: `{evidence_path}`\nContract: `{contract_path}`\nFailures: `{facts_path}`\n",
+                encoding="utf-8",
+            )
+            if best is None or write_back_error:
+                reason = (f"No completed trial reported finite numeric metric '{metric_name}'"
+                          if best is None else f"Write-back failed: {write_back_error}")
+                first_fact = facts[0] if facts else None
+                suggestion = f"; first failure: {first_fact['error_type']}: {first_fact['message']}; next: {first_fact['suggested_action']}" if first_fact else ""
+                return ToolResult(success=False, error=f"ML experiment failed: {reason}{suggestion}; evidence: {evidence_path}; failure facts: {facts_path}")
 
             return ToolResult(success=True, content=json.dumps({
                 "experiment_dir": str(experiment_dir), "best_trial": best["trial"], "best_score": best_score,
                 "baseline_score": baseline_score, "improvement_over_baseline": improvement,
-                "best_params": best["params"], "report": str(experiment_dir / "best_params.json"),
-                "results_csv": str(experiment_dir / "results.csv"), "write_back_path": report.get("write_back_path"),
+                "best_params": best["params"], "report": str(report_path),
+                "results_csv": str(results_path), "write_back_path": artifacts.get("write_back_path"),
+                "contract": str(contract_path), "evidence": str(evidence_path),
+                "failure_facts": str(facts_path), "report_md": str(report_md_path),
+                "failed_trials": len([item for item in records if item["status"] != "completed"]),
+                "failures": [{"trial": fact["trial"], "error_type": fact["error_type"],
+                              "message": fact["message"][:300], "suggested_action": fact["suggested_action"]}
+                             for fact in facts[:3]],
+                "static_check": inspection,
             }, ensure_ascii=False, indent=2))
         except Exception as exc:
+            if experiment_dir is not None and contract is not None:
+                facts = [fact for item in records if (fact := failure_fact(item, contract.metric_name)) is not None]
+                facts.append({"trial": None, "params": {}, "error_type": "experiment_error", "message": str(exc)[-2000:],
+                              "return_code": None, "stdout_log": None, "stderr_log": None,
+                              "suggested_action": "Inspect the experiment configuration and available dependencies", "recoverable": False})
+                facts_path = experiment_dir / "failure_facts.json"
+                facts_path.write_text(json.dumps(facts, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                evidence_path = experiment_dir / "evidence.json"
+                evidence = EvidenceBundle(
+                    contract_path=str(experiment_dir / "contract.json"), source_sha256=contract.source_sha256,
+                    baseline=records[0] if records else {}, trials=records[1:], best_trial=None, best_score=None,
+                    best_params=None, baseline_score=None, improvement_over_baseline=None,
+                    failure_facts=facts, artifacts={"contract": str(experiment_dir / "contract.json"),
+                                                    "failure_facts": str(facts_path)},
+                )
+                evidence_path.write_text(evidence.model_dump_json(indent=2) + "\n", encoding="utf-8")
+                return ToolResult(success=False, error=f"ML experiment failed: {exc}; evidence: {evidence_path}; failure facts: {facts_path}")
             return ToolResult(success=False, content="", error=f"ML experiment failed: {exc}")

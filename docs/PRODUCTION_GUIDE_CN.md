@@ -24,6 +24,12 @@ mini_param_agent 提供本地 Agent 循环和单脚本机器学习实验，并�
 | **日志**       | ✅ 每次运行的日志文件与实验产物。                                                                           |
 | **ML 调参**       | ✅ 读取参数范围，`run_ml_experiment`对 py / notebook 文件进行运行和训练，将输出最佳结果的参数保存在`.mini_param_agent/experiments/`，同时可选择直接写入源文件。                                                                           |
 
+### 实验契约与证据包
+
+`tools/ml_experiment_contract.py` 定义带版本号的 `ExperimentContract` 和 `EvidenceBundle`。ML 工具在训练前检查 Python/Notebook 语法、参数字面量引用与指标输出线索：默认 `static_check_mode="strict"` 会拒绝可解析 Python 中未被引用的搜索参数；动态查找可用 `"warn"` 继续运行并保留警告。静态检查不能证明参数实际进入模型，也不能证明指标有效；每次运行仍会校验目标指标是否为有限数值。
+
+实验目录包含 `contract.json`（源码 SHA-256、命令、参数空间、seed 和静态检查结果）、各 trial 指标与日志、`results.csv`、`failure_facts.json`、`evidence.json`、`report.md`，成功时另有原有的 `best_params.json`。证据包统一记录基线、全部 trial、程序选出的最优结果、Python/平台及部分依赖版本、产物路径和失败事实。每条失败事实给出 trial、参数、错误类别、退出码、日志路径及下一步建议。全部 trial 指标无效时，工具仍返回证据文件路径，不会编造最佳结果。失败事实会通过工具结果反馈给 Agent；修复脚本和重跑仍需明确决策。这是单脚本本地实验契约，不是通用模型语义分析器。
+
 ### 1.1 项目结构
 
 ```text
@@ -36,7 +42,7 @@ mini_param_agent/
 ├── config/                 # 安全模板、系统提示词与 MCP 示例
 ├── llm/                    # Anthropic/OpenAI 兼容模型客户端
 ├── schema/                 # Pydantic 消息、工具调用与用量模型
-├── tools/                  # 文件、Shell、笔记、Skills、MCP、ML 与召回工具
+├── tools/                  # 文件、Shell、笔记、Skills、MCP、ML 契约与召回工具
 ├── skills/                 # 随包提供的 Skill 说明与第三方声明
 └── logger.py / retry.py    # 运行日志与可配置重试策略
 tests/                      # 单元、协议、工具与上下文回归测试

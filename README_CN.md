@@ -10,7 +10,7 @@ mini_param_agent 是一个在本地运行的 CLI Agent，可对单个 Python 训
 - 可配置最近消息保留、有界摘要、可选 `recall_context` 关键词召回，以及支持恢复和上一版本备份的会话快照。支持挂载式 POSIX 共享文件系统，不会自动部署分布式存储服务。详见[上下文配置](docs/PRODUCTION_GUIDE_CN.md#21-高级上下文管理)。
 - 工作区文件读取、写入、编辑、Shell 命令以及会话笔记记录和检索。
 - 加载随包提供的 Skills 和可选 MCP 工具，并提供 ACP 服务供兼容编辑器使用。
-- 对单个 `.py` 或可转换的 `.ipynb` 先运行基线，再使用 Optuna 搜索。训练程序通过 `ML_EXPERIMENT_PARAMS` 接收参数，以 JSON/CSV 或 `ML_METRICS` 输出指标；保存 trial 日志、`results.csv` 和 `best_params.json`。回写源文件须显式指定。
+- 对单个 `.py` 或可转换的 `.ipynb` 先做静态检查、运行基线，再使用 Optuna 搜索。训练程序通过 `ML_EXPERIMENT_PARAMS` 接收参数，以 JSON/CSV 或 `ML_METRICS` 输出指标；保存版本化实验契约、trial 日志、`results.csv`、`best_params.json`、`evidence.json`、失败事实和 Markdown 报告。回写源文件须显式指定。
 - 通过配置选择 Anthropic 或 OpenAI 客户端；正确配置后可接入兼容 API 的本地模型服务。
 
 ## 当前可用的 Tools
@@ -22,7 +22,7 @@ CLI 会注册以下工具（可在 `config.yaml` 中关闭对应工具组）：
 - `record_note`、`recall_notes`：在工作区保存和检索会话笔记。
 - `recall_context`：设置 `context.enable_recall: true` 后可用，按关键词检索当前会话已压缩的历史；不同于手动记录的笔记。
 - `get_skill`：按需加载随包提供的某个 Skill 的完整说明；Skill 元数据会注入系统提示词。
-- `run_ml_experiment`：对 `.py`/`.ipynb` 训练程序运行基线和 Optuna trial，收集指标，并可选回写最佳参数。
+- `run_ml_experiment`：静态检查 `.py`/`.ipynb` 训练程序，运行基线和 Optuna trial，校验有限数值指标，保存可复核的证据包与失败事实，并可选回写最佳参数。
 - 配置的 MCP 工具：启用 MCP 且存在 `mcp.json` 时，从外部 MCP 服务加载工具。
 
 工具的精确参数模式会在运行时提供给模型。文件工具检查工作区路径，但 Shell 和训练程序不是安全沙箱，请只执行可信代码。上下文存储可显式配置到工作区外的共享目录，应自行限制访问权限。
@@ -66,17 +66,20 @@ cp mini_param_agent/config/config-example.yaml mini_param_agent/config/config.ya
 
 ## 运行调参实验
 
-训练脚本必须读取 `ML_EXPERIMENT_PARAMS`，并向 `ML_EXPERIMENT_METRICS_PATH` 写入指标；也可以在最后输出 `ML_METRICS: {...}`。参见 [RBF SVC 示例](examples/ml/tune_rbf_svc_moons.py)和[功能、调参与生产指南](docs/PRODUCTION_GUIDE_CN.md)。
+训练脚本必须读取 `ML_EXPERIMENT_PARAMS`，并向 `ML_EXPERIMENT_METRICS_PATH` 写入指标；也可以在最后输出 `ML_METRICS: {...}`。运行前的严格静态检查会分析 Python 语法、参数字面量引用（含 `ML_PARAM_*` 和命令占位符）及指标输出线索。它无法证明参数真的改变了模型，训练结果仍需运行时验证；动态参数查找可设置 `static_check_mode: "warn"`，保留警告但继续训练。参见 [RBF SVC 示例](examples/ml/tune_rbf_svc_moons.py)和[功能、调参与生产指南](docs/PRODUCTION_GUIDE_CN.md)。
 
 ```text
 请调用 run_ml_experiment，训练文件为 examples/ml/tune_rbf_svc_moons.py。
 优化 val_accuracy，方向 maximize。搜索 C（0.01～100）和 gamma（0.01～10），
-两者都是 log 尺度的 float；基线 C=1.0、gamma=1.0。
-运行 20 次 trial，seed 42，单次 timeout 60 秒。
-报告基线分数、最佳分数、最佳参数、报告路径和 CSV 路径。不要回写源文件。
+两者都是 log 尺度的 float；基线 C=0.05、gamma=0.05。
+运行 5 次 trial，seed 42，单次 timeout 60 秒。
+报告基线分数、最佳分数、最佳参数，以及 contract.json、evidence.json、
+failure_facts.json、report.md、results.csv 的路径，并说明失败 trial 数。不要回写源文件。
 ```
 
 如果希望把最佳参数写进带标记的 Python 文件或 JSON 配置，须显式给出 `write_back_path`。工具不会重写任意模型代码，也不会回写原始 Notebook。实验会执行传入的训练文件，因此只使用可信代码。
+
+每次运行先生成 `contract.json`，记录源码 SHA-256、指标、参数空间、基线、seed、超时、命令和静态检查结果。训练后 `evidence.json` 统一关联基线、trial、程序计算并校验的最佳分数、Python/平台及部分依赖版本、产物和失败事实。`failure_facts.json` 包含错误类型、参数、退出码、日志路径及建议的下一步；`report.md` 概述结果。若全部 trial 失败，工具仍返回证据与失败文件路径，此时不会生成虚假的最佳参数报告。Agent 会读到失败事实，但不会自动修复任意训练脚本；可根据提示修改后显式重跑。
 
 ## 其他用法
 
