@@ -4,13 +4,13 @@
 
 ## Table of Contents
 
-- [1. Demo Features](#1-demo-features)
+- [1. Features](#1-features)
 - [2. Upgrade Directions](#2-upgrade-directions)
 - [3. Production Deployment](#3-production-deployment)
 
 ---
 
-## 1. Demo Features
+## 1. Agent Features
 
 mini_param_agent provides a local agent loop and single-script ML experiments. It is not a managed training platform; production use needs additional controls for the training code, dependencies, resources, and data.
 
@@ -22,26 +22,7 @@ mini_param_agent provides a local agent loop and single-script ML experiments. I
 | **Tool Calling**       | ✅ Read/Write/Edit/Bash, notes, Skills, optional MCP, and ML experiments                                                |
 | **Error Handling**     | ✅ Exceptions and configurable LLM retries                                                                             |
 | **Logging**            | ✅ Per-run log files and experiment artifacts                                                                          |
-
-### ML experiment capability
-
-`run_ml_experiment` runs a baseline and serial Optuna trials for one `.py` or convertible `.ipynb` file. The training program receives `ML_EXPERIMENT_PARAMS`, `ML_PARAM_<NAME>`, `ML_EXPERIMENT_METRICS_PATH`, `ML_EXPERIMENT_TRIAL_DIR`, and `ML_EXPERIMENT_SEED`. It must write a JSON/CSV metric file or print a final `ML_METRICS: {"val_accuracy": 0.91}` line.
-
-Use `script_path`, `metric_name`, `metric_mode`, `parameter_space`, `n_trials`, `seed`, and `timeout`. Search spaces support float/int/categorical parameters, `low`/`high` (or `min`/`max`), logarithmic floats, integer steps, and categorical choices. The baseline is run first; `n_trials` counts additional trials. Results are saved under `.mini_param_agent/experiments/` as trial logs, `results.csv`, and `best_params.json`.
-
-The tool does not edit source files by default. To write the best parameters to JSON or to a marked Python file, pass `write_back_path`; notebook source is never rewritten. Use validation metrics, keep the test set separate, and treat training files as executable trusted code. See [the RBF SVC example](../examples/ml/tune_rbf_svc_moons.py).
-
-Example prompt:
-
-```text
-Call run_ml_experiment on train.py. Optimize val_accuracy (maximize).
-Search lr as a log float from 1e-4 to 1e-2, dropout from 0 to 0.5,
-weight_decay as a log float from 1e-6 to 1e-2, and batch_size from [32,64,128].
-Run a baseline plus 20 trials, seed 42, timeout 600 seconds. Report baseline,
-best score, improvement, parameters, report path, and CSV path. Do not write back.
-```
-
-The search is not a min-to-max sweep: Optuna chooses configurations within the bounds. Fixed seeds improve reproducibility, but the training script must also seed its own libraries. `log: true` is appropriate for learning rates and regularization values.
+| **ML experiment capability**            | ✅ Read parameter range, `run_ml_experiment` runs and trains the py / notebook file, and save best parameters in `.mini_param_agent/experiments/`, or can choose to write directly to the source file                                                                          |
 
 
 ## 2. Upgrade Directions
