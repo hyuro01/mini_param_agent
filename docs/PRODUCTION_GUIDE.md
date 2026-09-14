@@ -14,15 +14,6 @@
 
 mini_param_agent provides a local agent loop and single-script ML experiments. It is not a managed training platform; production use needs additional controls for the training code, dependencies, resources, and data.
 
-### What We've Implemented (Demo Level)
-
-| Feature                | Demo Implementation                                                                                                   |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| **Context Management** | ✅ Recent complete rounds, bounded summaries, calibrated token estimates, optional resumable snapshots/backups and keyword recall; existing notes remain available |
-| **Tool Calling**       | ✅ Read/Write/Edit/Bash, notes, Skills, optional MCP, and ML experiments                                                |
-| **Error Handling**     | ✅ Exceptions and configurable LLM retries                                                                             |
-| **Logging**            | ✅ Per-run log files and experiment artifacts                                                                          |
-| **ML experiment capability**            | ✅ Read parameter range, `run_ml_experiment` runs and trains the py / notebook file, and save best parameters in `.mini_param_agent/experiments/`, or can choose to write directly to the source file                                                                          |
 
 ### 1.1 Project Structure
 
@@ -46,10 +37,18 @@ examples/                   # ML training and experiment examples
 
 The normal path is `cli.py` or `acp/server.py` → `Agent` → `LLMClient` and registered `Tool` implementations. `context.py` sits immediately before each model request, so the same budget and persistence behavior is shared by interactive CLI and ACP sessions. Configuration templates are packaged, while personal `config.yaml`, logs, experiment outputs and context snapshots remain local and ignored by Git.
 
+### 1.2 What We've Implemented
 
-## 2. Upgrade Directions
+| Feature                | Demo Implementation                                                                                                   |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **Context Management** | ✅ Recent complete rounds, bounded summaries, calibrated token estimates, optional resumable snapshots/backups and keyword recall; existing notes remain available |
+| **Tool Calling**       | ✅ Read/Write/Edit/Bash, notes, Skills, optional MCP, and ML experiments                                                |
+| **Error Handling**     | ✅ Exceptions and configurable LLM retries                                                                             |
+| **Logging**            | ✅ Per-run log files and experiment artifacts                                                                          |
+| **ML experiment capability**            | ✅ Read parameter range, `run_ml_experiment` runs and trains the py / notebook file, and save best parameters in `.mini_param_agent/experiments/`, or can choose to write directly to the source file                                                                          |
 
-### 2.1 Advanced Context Management
+
+### 1.3 Advanced Context Management
 
 Implemented in `mini_param_agent/context.py`, integrated before model calls in `agent.py`, configured through `config.py`, CLI and ACP. `tools/context_recall.py` provides optional archive retrieval.
 
@@ -98,14 +97,17 @@ The previous generation is a same-storage backup, not off-site disaster recovery
 
 Future work: native Qwen/server token counting, vector/hybrid retrieval, indexed/sharded archives, retention policies, encryption/access controls, off-site backups and ACP session loading.
 
-### 2.2 Model Fallback Mechanism
+
+## 2. Upgrade Directions
+
+### 2.1 Model Fallback Mechanism
 
 The config selects one model and either an Anthropic or OpenAI client. It does not implement automatic failover across models.
 
 - Introduce a model pool by configuring multiple model accounts to improve availability
 - Introduce automatic health checks, failure removal, circuit breaker strategies for the model pool
 
-### 2.3 Model Hallucination Detection and Correction
+### 2.2 Model Hallucination Detection and Correction
 
 Tool arguments are validated by individual tools, but the project does not provide a general model-output verification system.
 
