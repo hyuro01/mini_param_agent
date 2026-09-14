@@ -14,6 +14,7 @@
 
 mini_param_agent 提供本地 Agent 循环和单脚本机器学习实验，并非托管训练平台。生产使用还需额外控制训练代码、依赖、资源和数据。
 
+
 ### 1.1 项目结构
 
 ```text
@@ -26,7 +27,7 @@ mini_param_agent/
 ├── config/                 # 安全模板、系统提示词与 MCP 示例
 ├── llm/                    # Anthropic/OpenAI 兼容模型客户端
 ├── schema/                 # Pydantic 消息、工具调用与用量模型
-├── tools/                  # 文件、Shell、笔记、Skills、MCP、ML 契约与召回工具
+├── tools/                  # 文件、Shell、笔记、Skills、MCP、ML 与召回工具
 ├── skills/                 # 随包提供的 Skill 说明与第三方声明
 └── logger.py / retry.py    # 运行日志与可配置重试策略
 tests/                      # 单元、协议、工具与上下文回归测试
@@ -46,19 +47,7 @@ examples/                   # ML 训练与实验示例
 | **日志**       | ✅ 每次运行的日志文件与实验产物。                                                                           |
 | **ML 调参**       | ✅ 读取参数范围，`run_ml_experiment`对 py / notebook 文件进行运行和训练，将输出最佳结果的参数保存在`.mini_param_agent/experiments/`，同时可选择直接写入源文件。                                                                           |
 
-### 1.3 实验契约与证据包
-
-`tools/ml_experiment_contract.py` 定义带版本号的 `ExperimentContract` 和 `EvidenceBundle`。ML 工具在训练前检查 Python/Notebook 语法、参数字面量引用与指标输出线索：默认 `static_check_mode="strict"` 会拒绝可解析 Python 中未被引用的搜索参数；动态查找可用 `"warn"` 继续运行并保留警告。静态检查不能证明参数实际进入模型，也不能证明指标有效；每次运行仍会校验目标指标是否为有限数值。
-
-实验目录包含 `contract.json`（源码 SHA-256、命令、参数空间、seed 和静态检查结果）、各 trial 指标与日志、`results.csv`、`failure_facts.json`、`evidence.json`、`report.md`，成功时另有原有的 `best_params.json`。证据包统一记录基线、全部 trial、程序选出的最优结果、Python/平台及部分依赖版本、产物路径和失败事实。每条失败事实给出 trial、参数、错误类别、退出码、日志路径及下一步建议。全部 trial 指标无效时，工具仍返回证据文件路径，不会编造最佳结果。失败事实会通过工具结果反馈给 Agent；修复脚本和重跑仍需明确决策。这是单脚本本地实验契约，不是通用模型语义分析器。
-
-
-
-
-
-## 2. 升级与拓展方向
-
-### 2.1 高级上下文管理
+### 1.3 高级上下文管理
 
 以下能力已实现。核心位于 `mini_param_agent/context.py`，由 `agent.py` 在每次模型调用前检查预算；`tools/context_recall.py` 提供召回工具，`config.py`、CLI 和 ACP 负责配置接入。
 
@@ -108,14 +97,24 @@ context:
 
 后续可升级：Qwen 原生 tokenizer / 服务端计数接口、向量或混合召回、索引与归档分片、保留周期、加密和访问控制，以及真正的异地备份与 ACP 会话恢复。
 
-### 2.2 模型回退机制
+### 1.4 ML 实验契约与证据包
+
+`tools/ml_experiment_contract.py` 定义带版本号的 `ExperimentContract` 和 `EvidenceBundle`。训练前会检查 Python/Notebook 语法、参数可见引用和指标输出线索。严格模式会拒绝可解析 Python 中未引用的搜索参数；`static_check_mode="warn"` 允许动态查找但保留警告。运行时仍会校验目标指标必须是有限数值。
+
+每次运行保存 `contract.json`、各 trial 日志与指标、`results.csv`、`failure_facts.json`、`evidence.json` 和 `report.md`；成功时还保存 `best_params.json`。证据包记录源码哈希、基线、全部 trial、程序选出的最优结果、环境版本、产物和失败事实。失败 trial 包含参数、错误类别、退出码、日志路径和下一步建议。没有有效指标时，工具返回证据路径而不会编造结果。
+
+
+## 2. 升级与拓展方向
+
+
+### 2.1 模型回退机制
 
 配置可选择一个模型及 Anthropic/OpenAI 客户端；当前没有跨模型自动回退机制。
 
 - **建立模型池**：配置多个模型账号，建立模型池以提高服务可用性。
 - **引入高可用策略**：为模型池引入自动健康检测、故障节点切换、熔断等高可用策略。
 
-### 2.3 模型幻觉的检测与修正
+### 2.2 模型幻觉的检测与修正
 
 各工具会分别校验调用参数，但项目尚无通用的模型输出验证机制。
 
