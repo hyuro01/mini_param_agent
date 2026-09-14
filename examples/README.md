@@ -109,7 +109,7 @@ python examples/04_full_agent.py
 - `05_provider_selection.py`: Anthropic/OpenAI client selection.
 - `06_tool_schema_demo.py`: tool schema and function-call examples.
 - `ml/tune_logistic_regression.py`: scikit-learn logistic-regression training that reports validation metrics.
-- `ml/tune_rbf_svc_moons.py`: a more visibly tunable RBF SVC using `C` and `gamma`; supports optional marked Python write-back. See the [experiment guide](../docs/ML_EXPERIMENT_TOOL.md).
+- `ml/tune_rbf_svc_moons.py`: a more visibly tunable RBF SVC using `C` and `gamma`; supports optional marked Python write-back. See the [production and ML guide](../docs/PRODUCTION_GUIDE.md).
 
 ---
 
@@ -173,7 +173,7 @@ These examples are all refined from test cases in the `tests/` directory:
 
 ### Path 3: Production Application
 1. Understand all examples
-2. Read [Production Deployment Guide](../docs/PRODUCTION_GUIDE.md)
+2. Read [Production and ML Guide](../docs/PRODUCTION_GUIDE.md)
 3. Configure MCP tools and Skills
 4. Extend tool set based on needs
 
@@ -209,7 +209,7 @@ cp mini_param_agent/config/config-example.yaml mini_param_agent/config/config.ya
 - [Main Project README](../README.md) - Complete project documentation
 - [Test Cases](../tests/) - More usage examples
 - [Core Implementation](../mini_param_agent/) - Source code
-- [Production Guide](../docs/PRODUCTION_GUIDE.md) - Deployment guide
+- [Production and ML Guide](../docs/PRODUCTION_GUIDE.md) - Features, experiments, and deployment
 
 ---
 

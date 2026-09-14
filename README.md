@@ -64,7 +64,7 @@ Set `api_key`, `api_base`, `model`, and `provider` (`anthropic` or `openai`) in 
 
 ## Run an ML experiment
 
-The training script must read `ML_EXPERIMENT_PARAMS` and write a metric to `ML_EXPERIMENT_METRICS_PATH` (or print a final `ML_METRICS: {...}` line). See [the RBF SVC example](examples/ml/tune_rbf_svc_moons.py) and [the full experiment guide](docs/ML_EXPERIMENT_TOOL.md).
+The training script must read `ML_EXPERIMENT_PARAMS` and write a metric to `ML_EXPERIMENT_METRICS_PATH` (or print a final `ML_METRICS: {...}` line). See [the RBF SVC example](examples/ml/tune_rbf_svc_moons.py) and the [production and ML guide](docs/PRODUCTION_GUIDE.md).
 
 ```text
 Call run_ml_experiment on examples/ml/tune_rbf_svc_moons.py.
@@ -86,7 +86,7 @@ uv run mini_param_agent --version
 uv run mini_param_agent log
 ```
 
-The [examples directory](examples/README.md) contains basic tools, simple and full agents, session notes, provider selection, tool schemas, and ML training examples. For configuration and extension details, see the [development guide](docs/DEVELOPMENT_GUIDE.md); for ACP and deployment, see the [production guide](docs/PRODUCTION_GUIDE.md).
+The [examples directory](examples/README.md) contains basic tools, simple and full agents, session notes, provider selection, tool schemas, and ML training examples. For feature details, ML experiments, troubleshooting, upgrade directions, and deployment, see the [production guide](docs/PRODUCTION_GUIDE.md).
 
 ## Test
 

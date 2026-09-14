@@ -23,6 +23,26 @@ mini_param_agent 提供本地 Agent 循环和单脚本机器学习实验，并�
 | **错误处理**   | ✅ 异常处理与可配置的 LLM 重试。                                                                             |
 | **日志**       | ✅ 每次运行的日志文件与实验产物。                                                                           |
 
+### ML 调参功能
+
+`run_ml_experiment` 会对一个 `.py` 或可转换的 `.ipynb` 先运行基线，再串行运行 Optuna trial。训练程序会收到 `ML_EXPERIMENT_PARAMS`、`ML_PARAM_<参数名>`、`ML_EXPERIMENT_METRICS_PATH`、`ML_EXPERIMENT_TRIAL_DIR` 和 `ML_EXPERIMENT_SEED`。程序需要写入 JSON/CSV 指标文件，或在最后输出 `ML_METRICS: {"val_accuracy": 0.91}`。
+
+调用时使用 `script_path`、`metric_name`、`metric_mode`、`parameter_space`、`n_trials`、`seed` 和 `timeout`。参数空间支持 float/int/categorical、`low`/`high`（也兼容 `min`/`max`）、对数搜索、整数步长和类别列表。基线单独先运行；`n_trials` 只计算额外 trial。结果保存在 `.mini_param_agent/experiments/`，包括 trial 日志、`results.csv` 和 `best_params.json`。
+
+默认不会修改源文件。如需把最佳参数写入 JSON 或带标记的 Python 文件，显式传入 `write_back_path`；Notebook 本体不会被回写。应使用验证集指标并保留独立测试集，且只执行可信的训练代码。可参考 [RBF SVC 示例](../examples/ml/tune_rbf_svc_moons.py)。
+
+示例 prompt：
+
+```text
+请调用 run_ml_experiment，训练文件为 train.py，优化 val_accuracy（maximize）。
+搜索 lr（1e-4～1e-2，对数 float）、dropout（0～0.5）、
+weight_decay（1e-6～1e-2，对数 float）和 batch_size（[32,64,128]）。
+先运行基线，再运行 20 次 trial；seed 42，timeout 600 秒。
+报告基线、最佳分数、提升幅度、参数、报告路径和 CSV 路径。不要回写源文件。
+```
+
+搜索不是从最小值到最大值逐步扫描，而是在边界内由 Optuna 选择配置。固定 seed 有助于复现，但训练脚本仍应自行设置相关库的随机种子。学习率和正则化参数通常适合 `log: true`。
+
 
 ## 2. 升级与拓展方向
 

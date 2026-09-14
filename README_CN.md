@@ -64,7 +64,7 @@ cp mini_param_agent/config/config-example.yaml mini_param_agent/config/config.ya
 
 ## 运行调参实验
 
-训练脚本必须读取 `ML_EXPERIMENT_PARAMS`，并向 `ML_EXPERIMENT_METRICS_PATH` 写入指标；也可以在最后输出 `ML_METRICS: {...}`。参见 [RBF SVC 示例](examples/ml/tune_rbf_svc_moons.py)和[完整调参说明](docs/ML_EXPERIMENT_TOOL.md)。
+训练脚本必须读取 `ML_EXPERIMENT_PARAMS`，并向 `ML_EXPERIMENT_METRICS_PATH` 写入指标；也可以在最后输出 `ML_METRICS: {...}`。参见 [RBF SVC 示例](examples/ml/tune_rbf_svc_moons.py)和[功能、调参与生产指南](docs/PRODUCTION_GUIDE_CN.md)。
 
 ```text
 请调用 run_ml_experiment，训练文件为 examples/ml/tune_rbf_svc_moons.py。
@@ -85,7 +85,7 @@ uv run mini_param_agent --version
 uv run mini_param_agent log
 ```
 
-[示例目录](examples/README_CN.md)包含基础工具、简单与完整 Agent、会话笔记、模型服务选择、工具模式和 ML 训练示例。配置与扩展见[开发指南](docs/DEVELOPMENT_GUIDE_CN.md)；ACP 和部署见[生产指南](docs/PRODUCTION_GUIDE_CN.md)。
+[示例目录](examples/README_CN.md)包含基础工具、简单与完整 Agent、会话笔记、模型服务选择、工具模式和 ML 训练示例。功能、调参、故障排查、升级方向和部署见[生产指南](docs/PRODUCTION_GUIDE_CN.md)。
 
 ## 测试
 

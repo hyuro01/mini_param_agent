@@ -109,7 +109,7 @@ python examples/04_full_agent.py
 - `05_provider_selection.py`：Anthropic/OpenAI 客户端选择。
 - `06_tool_schema_demo.py`：工具模式与函数调用示例。
 - `ml/tune_logistic_regression.py`：报告验证指标的 scikit-learn 逻辑回归训练。
-- `ml/tune_rbf_svc_moons.py`：可调 `C` 和 `gamma` 的 RBF SVC，支持显式标记的 Python 参数回写。参见[调参说明](../docs/ML_EXPERIMENT_TOOL.md)。
+- `ml/tune_rbf_svc_moons.py`：可调 `C` 和 `gamma` 的 RBF SVC，支持显式标记的 Python 参数回写。参见[功能、调参与生产指南](../docs/PRODUCTION_GUIDE_CN.md)。
 
 ---
 
@@ -173,7 +173,7 @@ python examples/02_simple_agent.py
 
 ### 路径 3: 生产应用
 1. 理解所有示例
-2. 阅读 [生产环境部署指南](../docs/PRODUCTION_GUIDE.md)
+2. 阅读 [功能、调参与生产指南](../docs/PRODUCTION_GUIDE_CN.md)
 3. 配置 MCP 工具和 Skills
 4. 根据需求扩展工具集
 
@@ -209,7 +209,7 @@ cp mini_param_agent/config/config-example.yaml mini_param_agent/config/config.ya
 - [项目主 README](../README.md) - 完整项目文档
 - [测试用例](../tests/) - 更多使用示例
 - [核心实现](../mini_param_agent/) - 源代码
-- [生产环境指南](../docs/PRODUCTION_GUIDE.md) - 部署指南
+- [功能、调参与生产指南](../docs/PRODUCTION_GUIDE_CN.md) - 功能、实验与部署
 
 ---
 
