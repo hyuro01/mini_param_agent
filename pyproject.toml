@@ -1,0 +1,76 @@
+[project]
+name = "mini-param-agent"
+version = "0.1.0"
+description = "Agent for single-script ML experiments with Optuna and general tool use"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    {name = "mini_param_agent contributors"}
+]
+license = {text = "MIT"}
+dependencies = [
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0.0",
+    "httpx>=0.27.0",
+    "mcp>=1.0.0,<2.0.0",
+    "tiktoken>=0.5.0",
+    "prompt-toolkit>=3.0.0",
+    "anthropic>=0.39.0",
+    "openai>=1.57.4",
+    "agent-client-protocol>=0.6.0",
+]
+
+[project.scripts]
+mini_param_agent = "mini_param_agent.cli:main"
+mini_param_agent_acp = "mini_param_agent.acp.server:main"
+
+[project.optional-dependencies]
+ml = [
+    "optuna>=3.0.0",
+    "nbconvert>=7.0.0",
+    "scikit-learn>=1.4.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["mini_param_agent*"]
+exclude = ["tests*"]
+
+# Include skills directory (git submodule) as package data
+# After moving submodule to mini_param_agent/skills
+[tool.setuptools.package-data]
+mini_param_agent = [
+    "skills/**/*",
+    "config/config-example.yaml",
+    "config/mcp-example.json",
+    "config/system_prompt.md",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+cache_dir = "workspace/.pytest_cache"
+asyncio_mode = "auto"
+
+[tool.pylint.messages_control]
+# Disable warnings for Tool.execute method signature differences
+# We intentionally use explicit parameters in subclasses for better type hints
+disable = [
+    "arguments-differ",  # Allow subclasses to have different parameter signatures
+]
+
+[dependency-groups]
+dev = [
+    "pytest-asyncio>=1.2.0",
+    "pytest-cov>=7.0.0",
+    "pytest-xdist>=3.8.0",
+]

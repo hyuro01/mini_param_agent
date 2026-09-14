@@ -1,0 +1,5 @@
+recursive-include mini_param_agent/skills *
+include mini_param_agent/skills/README.md
+include mini_param_agent/skills/THIRD_PARTY_NOTICES.md
+include mini_param_agent/skills/agent_skills_spec.md
+
