@@ -7,6 +7,7 @@ mini_param_agent 是一个在本地运行的 CLI Agent，可对单个 Python 训
 ## 已实现的能力
 
 - Agent 循环、工具调用、重试、日志与上下文摘要。
+- 可配置最近消息保留、有界摘要、可选 `recall_context` 关键词召回，以及支持恢复和上一版本备份的会话快照。支持挂载式 POSIX 共享文件系统，不会自动部署分布式存储服务。详见[上下文配置](docs/PRODUCTION_GUIDE_CN.md#21-高级上下文管理)。
 - 工作区文件读取、写入、编辑、Shell 命令以及会话笔记记录和检索。
 - 加载随包提供的 Skills 和可选 MCP 工具，并提供 ACP 服务供兼容编辑器使用。
 - 对单个 `.py` 或可转换的 `.ipynb` 先运行基线，再使用 Optuna 搜索。训练程序通过 `ML_EXPERIMENT_PARAMS` 接收参数，以 JSON/CSV 或 `ML_METRICS` 输出指标；保存 trial 日志、`results.csv` 和 `best_params.json`。回写源文件须显式指定。
@@ -19,11 +20,12 @@ CLI 会注册以下工具（可在 `config.yaml` 中关闭对应工具组）：
 - `read_file`、`write_file`、`edit_file`：在选定工作区内读取和修改文件。
 - `bash`、`bash_output`、`bash_kill`：执行前台或后台 Shell 命令，查看或终止后台任务。
 - `record_note`、`recall_notes`：在工作区保存和检索会话笔记。
+- `recall_context`：设置 `context.enable_recall: true` 后可用，按关键词检索当前会话已压缩的历史；不同于手动记录的笔记。
 - `get_skill`：按需加载随包提供的某个 Skill 的完整说明；Skill 元数据会注入系统提示词。
 - `run_ml_experiment`：对 `.py`/`.ipynb` 训练程序运行基线和 Optuna trial，收集指标，并可选回写最佳参数。
 - 配置的 MCP 工具：启用 MCP 且存在 `mcp.json` 时，从外部 MCP 服务加载工具。
 
-工具的精确参数模式会在运行时提供给模型。工具都以工作区为边界；ML 实验会执行你传入的训练程序，请只使用可信代码。
+工具的精确参数模式会在运行时提供给模型。文件工具检查工作区路径，但 Shell 和训练程序不是安全沙箱，请只执行可信代码。上下文存储可显式配置到工作区外的共享目录，应自行限制访问权限。
 
 ## `mcp-example.json` 是什么？
 

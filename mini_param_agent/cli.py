@@ -611,9 +611,13 @@ async def run_agent(workspace_dir: Path, task: str = None):
         tools=tools,
         max_steps=config.agent.max_steps,
         workspace_dir=str(workspace_dir),
+        context_config=config.agent.context,
     )
 
     # 8. Display welcome information
+    if agent.context.store:
+        print(f"Context session: {agent.context.store.session_id}")
+        print(f"Context snapshot: {agent.context.store.path}")
     if not task:
         print_banner()
         print_session_info(agent, workspace_dir, config.llm.model)
@@ -712,7 +716,10 @@ async def run_agent(workspace_dir: Path, task: str = None):
                 elif command == "/clear":
                     # Clear message history but keep system prompt
                     old_count = len(agent.messages)
-                    agent.messages = [agent.messages[0]]  # Keep only system message
+                    agent.clear_history()
+                    if agent.context.store:
+                        print(f"Context session: {agent.context.store.session_id}")
+                        print(f"Context snapshot: {agent.context.store.path}")
                     print(f"{Colors.GREEN}✅ Cleared {old_count - 1} messages, starting new session{Colors.RESET}\n")
                     continue
 

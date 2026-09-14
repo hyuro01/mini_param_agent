@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, Field
+from .context import ContextConfig
 
 
 class RetryConfig(BaseModel):
@@ -35,6 +36,7 @@ class AgentConfig(BaseModel):
     max_steps: int = 50
     workspace_dir: str = "./workspace"
     system_prompt_path: str = "system_prompt.md"
+    context: ContextConfig = Field(default_factory=ContextConfig)
 
 
 class MCPConfig(BaseModel):
@@ -134,6 +136,7 @@ class Config(BaseModel):
             max_steps=data.get("max_steps", 50),
             workspace_dir=data.get("workspace_dir", "./workspace"),
             system_prompt_path=data.get("system_prompt_path", "system_prompt.md"),
+            context=ContextConfig(**data.get("context", {})),
         )
 
         # Parse tools configuration

@@ -7,6 +7,7 @@ mini_param_agent is a local CLI agent that can run reproducible hyperparameter e
 ## What it does
 
 - Runs an agent loop with tool calls, retries, logging, and context summarization.
+- Configurable recent-history retention, bounded summaries, optional `recall_context` keyword search, and resumable snapshots with a previous-generation backup. Shared POSIX filesystem mounts are supported; no distributed storage service is deployed. See [context configuration](docs/PRODUCTION_GUIDE.md#21-advanced-context-management).
 - Reads, writes, and edits workspace files; runs shell commands; records and recalls session notes.
 - Loads bundled skills and optional MCP tools, and exposes an ACP server for compatible editors.
 - Runs a baseline plus Optuna trials for a single `.py` or convertible `.ipynb` training program. Trials receive parameters through `ML_EXPERIMENT_PARAMS` and report JSON/CSV metrics or `ML_METRICS` output. Results include trial logs, `results.csv`, and `best_params.json`. Source write-back is optional and explicit.
@@ -19,11 +20,12 @@ The CLI registers these tools (individual groups can be disabled in `config.yaml
 - `read_file`, `write_file`, `edit_file`: safely inspect and modify files inside the selected workspace.
 - `bash`, `bash_output`, `bash_kill`: run foreground or background shell commands and inspect or stop background jobs.
 - `record_note`, `recall_notes`: persist and retrieve session notes in the workspace.
+- `recall_context`: enabled with `context.enable_recall: true`; keyword search over this session's compacted history, separate from manually recorded notes.
 - `get_skill`: load the full instructions for one of the bundled skills on demand; skill metadata is injected into the system prompt.
 - `run_ml_experiment`: run a baseline and Optuna trials for a `.py`/`.ipynb` training program, collect metrics, and optionally write back the best parameters.
 - Configured MCP tools: external tools loaded from an `mcp.json` file when MCP is enabled.
 
-The exact tool schemas are exposed to the model at runtime. Tools execute with the workspace as their boundary; ML experiments execute the training program you provide, so only use trusted code.
+The exact tool schemas are exposed to the model at runtime. File tools check workspace paths, but shell commands and training programs are not sandboxed: execute trusted code only. Context storage can explicitly target a shared directory outside the workspace; restrict its access permissions.
 
 ## MCP example configuration
 

@@ -26,6 +26,23 @@ retry:
 
 # ===== Agent Configuration =====
 max_steps: 100  # Maximum execution steps
+
+# Conversation memory. Match token_limit to the server's actual context window.
+# Persistence is opt-in: snapshots contain private conversation and tool output.
+context:
+  token_limit: 80000
+  reserve_tokens: 4096
+  keep_recent_messages: 12  # Minimum; whole user rounds remain together
+  strategy: summary  # summary (LLM + bounded fallback) or recent (excerpts only)
+  summary_chars: 4000
+  summary_input_chars: 24000
+  safety_margin: 1.15
+  encoding: null  # Auto-select tiktoken encoding; unknown models use cl100k_base
+  persistence: false
+  storage_dir: .mini_param_agent/context  # Relative to workspace; absolute shared mount supported
+  session_id: null  # Auto-generated; set a stable name to resume later
+  resume: false  # Requires persistence: true and an existing session_id
+  enable_recall: false  # Adds the read-only recall_context tool
 workspace_dir: "./workspace"  # Working directory
 system_prompt_path: "system_prompt.md"  # System prompt file (same config directory)
 

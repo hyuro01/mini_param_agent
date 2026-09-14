@@ -99,7 +99,8 @@ class MiniMaxACPAgent:
             workspace = workspace.resolve()
         tools = list(self._base_tools)
         add_workspace_tools(tools, self._config, workspace)
-        agent = Agent(llm_client=self._llm, system_prompt=self._system_prompt, tools=tools, max_steps=self._config.agent.max_steps, workspace_dir=str(workspace))
+        context_config = self._config.agent.context.model_copy(update={"session_id": session_id, "resume": False})
+        agent = Agent(llm_client=self._llm, system_prompt=self._system_prompt, tools=tools, max_steps=self._config.agent.max_steps, workspace_dir=str(workspace), context_config=context_config)
         self._sessions[session_id] = SessionState(agent=agent)
         return NewSessionResponse(sessionId=session_id)
 
@@ -125,10 +126,23 @@ class MiniMaxACPAgent:
             state.cancelled = True
 
     async def _run_turn(self, state: SessionState, session_id: str) -> str:
+        try:
+            try:
+                return await self._run_context_turn(state, session_id)
+            finally:
+                state.agent._remove_unfinished_tool_step()
+                state.agent._checkpoint()
+        except (OSError, ValueError, RuntimeError) as exc:
+            await self._send(session_id, update_agent_message(text_block(f"Context error: {exc}")))
+            return "refusal"
+
+    async def _run_context_turn(self, state: SessionState, session_id: str) -> str:
         agent = state.agent
         for _ in range(agent.max_steps):
             if state.cancelled:
                 return "cancelled"
+            agent._checkpoint()
+            await agent._summarize_messages(quiet=True, tools=list(agent.tools.values()))
             tool_schemas = [tool.to_schema() for tool in agent.tools.values()]
             try:
                 response = await agent.llm.generate(messages=agent.messages, tools=tool_schemas)
@@ -136,6 +150,9 @@ class MiniMaxACPAgent:
                 logger.exception("LLM error")
                 await self._send(session_id, update_agent_message(text_block(f"Error: {exc}")))
                 return "refusal"
+            if response.usage:
+                agent.api_total_tokens = response.usage.total_tokens
+                agent.context.counter.observe(response.usage.prompt_tokens, agent.messages, list(agent.tools.values()))
             if response.thinking:
                 await self._send(session_id, update_agent_thought(text_block(response.thinking)))
             if response.content:
